@@ -38,23 +38,35 @@ pip install pandas numpy matplotlib seaborn tqdm
 
 ## 사용 방법
 
-### 1. 명령줄 인터페이스 (CLI)
+### 1. 간단한 사용법 (권장)
 
 ```bash
-# 기본 사용법
-python main.py "D:/pne/LGES_G3_MP1_4352mAh_상온수명" --export-csv
+# 경로만 입력하면 모든 처리가 자동으로 실행됩니다
+python main.py "D:/pne/LGES_G3_MP1_4352mAh_상온수명"
 
-# 시각화 포함
-python main.py "D:/toyo/battery_data" --visualize --export-csv
+# 출력 디렉토리를 지정하려면
+python main.py "D:/toyo/battery_data" --output-dir "results/"
 
-# 특정 채널만 처리
-python main.py "D:/data" --channels Ch86 Ch93 --separate-channels
-
-# 모든 기능 사용
-python main.py "D:/data" --export-csv --visualize --output-dir "results/" --summary
+# 상세 로그를 보려면
+python main.py "D:/data" --verbose
 ```
 
-### 2. Python 스크립트에서 사용
+### 2. 대화형 실행
+
+```bash
+# 경로를 대화형으로 입력
+python run_simple.py
+```
+
+### 3. 자동 실행 기능
+
+경로만 입력하면 다음이 모두 자동으로 실행됩니다:
+- ✅ 모든 채널 데이터 로드
+- ✅ 채널별 + 병합된 CSV 파일 출력  
+- ✅ 모든 시각화 차트 생성 (전압/전류, 용량감소, 통계, 채널비교)
+- ✅ 통계 요약 출력
+
+### 4. Python 스크립트에서 사용
 
 ```python
 from src.battery_data_processor import BatteryDataProcessor
@@ -63,18 +75,27 @@ from src.battery_data_processor import BatteryDataProcessor
 data_path = "D:/pne/LGES_G3_MP1_4352mAh_상온수명"
 processor = BatteryDataProcessor(data_path)
 
-# 데이터 로드
-channel_data = processor.load_data()
-merged_data = processor.merge_channels()
+# 자동 처리 (한 번에 모든 기능 실행)
+def auto_process(data_path):
+    processor = BatteryDataProcessor(data_path)
+    
+    # 1. 데이터 로드 (모든 채널)
+    channel_data = processor.load_data()
+    merged_data = processor.merge_channels()
+    
+    # 2. CSV 출력 (병합 + 채널별)
+    exported_files = processor.export_to_csv(separate_channels=True)
+    
+    # 3. 시각화 (모든 차트)
+    processor.visualize_data()
+    
+    # 4. 통계 정보
+    stats = processor.get_summary_statistics()
+    
+    return stats, exported_files
 
-# CSV 출력
-exported_files = processor.export_to_csv()
-
-# 시각화
-processor.visualize_data()
-
-# 통계 정보
-stats = processor.get_summary_statistics()
+# 실행
+stats, files = auto_process("D:/your/data/path")
 ```
 
 ## 데이터 구조 지원
@@ -118,19 +139,19 @@ data_path/
 - `statistics_{timestamp}.png`: 사이클 통계 분석
 - `channels_{timestamp}.png`: 채널 간 비교
 
-## 명령줄 옵션
+## 명령줄 옵션 (간소화됨)
 
 | 옵션 | 설명 | 예시 |
 |------|------|------|
 | `data_path` | 배터리 테스트 데이터 경로 (필수) | `"D:/pne/data"` |
-| `--channels` | 처리할 특정 채널 지정 | `--channels Ch86 Ch93` |
-| `--output-dir` | 출력 디렉토리 지정 | `--output-dir "results/"` |
-| `--export-csv` | CSV 파일로 출력 | |
-| `--separate-channels` | 채널별 개별 CSV 생성 | |
-| `--visualize` | 데이터 시각화 생성 | |
-| `--plots` | 특정 차트만 생성 | `--plots capacity_fade voltage_current` |
-| `--summary` | 통계 요약 출력 | |
-| `--verbose` | 상세 로그 출력 | |
+| `--output-dir` | 출력 디렉토리 지정 (선택) | `--output-dir "results/"` |
+| `--verbose` | 상세 로그 출력 (선택) | |
+
+**자동 실행되는 기능들:**
+- 모든 채널 자동 로드
+- CSV 파일 자동 출력 (병합 + 채널별)
+- 모든 시각화 차트 자동 생성
+- 통계 요약 자동 출력
 
 ## 지원되는 데이터 형식
 
@@ -186,20 +207,23 @@ pip install pandas numpy matplotlib seaborn tqdm
 
 ## 예시 사용 시나리오
 
-### 1. 기본 데이터 처리
+### 1. 기본 자동 처리 (가장 간단)
 ```bash
-python main.py "D:/pne/LGES_G3_MP1_4352mAh_상온수명" --export-csv --summary
+python main.py "D:/pne/LGES_G3_MP1_4352mAh_상온수명"
 ```
+→ 모든 기능이 자동으로 실행됩니다 (로드, CSV출력, 시각화, 통계)
 
-### 2. 상세 분석 및 시각화
+### 2. 대화형 실행
 ```bash
-python main.py "D:/data" --visualize --export-csv --output-dir "analysis_results/" --verbose
+python run_simple.py
 ```
+→ 경로를 대화형으로 입력하고 자동 처리
 
-### 3. 특정 채널 비교 분석
+### 3. 커스텀 출력 디렉토리
 ```bash
-python main.py "D:/data" --channels Ch86 Ch93 --separate-channels --visualize --plots channels
+python main.py "D:/data" --output-dir "analysis_results/" --verbose
 ```
+→ 지정된 디렉토리에 결과 저장
 
 ## 참고사항
 
