@@ -17,6 +17,7 @@ from .utils import (
 )
 from .data_loaders import get_data_loader
 from .data_visualizer import BatteryDataVisualizer
+from .toyo_labeling import ToyoDataLabeler
 
 logger = logging.getLogger(__name__)
 
@@ -214,7 +215,8 @@ class BatteryDataProcessor:
         return exported_files
     
     def export_toyo_separate_files(self, output_dir: Path, base_filename: str, 
-                                  include_battery_info: bool = True) -> List[str]:
+                                  include_battery_info: bool = True,
+                                  apply_labeling: bool = True) -> List[str]:
         """
         Export Toyo data as separate files: raw_data.csv and capacity_log.csv for each channel.
         
@@ -222,6 +224,7 @@ class BatteryDataProcessor:
             output_dir: Output directory
             base_filename: Base filename for output files
             include_battery_info: Whether to include battery info in files
+            apply_labeling: Whether to apply labeling (사이클, 패턴, 스텝, C-rate, Cutoff)
             
         Returns:
             List of exported file paths
@@ -242,6 +245,27 @@ class BatteryDataProcessor:
                 
                 # Load raw data only
                 raw_data = toyo_loader.load_raw_data_only(channel_folder)
+                # Load capacity log only
+                capacity_data = toyo_loader.load_capacity_log_only(channel_folder)
+                
+                # Apply labeling if requested
+                if apply_labeling and not capacity_data.empty:
+                    # Get rated capacity from battery info or use default
+                    rated_capacity = self.battery_info.get('capacity_mah', 1730) if self.battery_info else 1730
+                    
+                    # Initialize labeler
+                    labeler = ToyoDataLabeler(rated_capacity)
+                    
+                    # Label capacity log
+                    if not raw_data.empty:
+                        capacity_data = labeler.label_capacity_log(capacity_data, raw_data)
+                        raw_data = labeler.label_raw_data(raw_data, capacity_data)
+                    else:
+                        capacity_data = labeler.label_capacity_log(capacity_data)
+                    
+                    logger.info(f"Applied labeling to {channel_name} data")
+                
+                # Export raw data if exists
                 if not raw_data.empty:
                     # Add metadata columns
                     if include_battery_info:
@@ -253,14 +277,14 @@ class BatteryDataProcessor:
                     raw_data['channel'] = channel_name
                     
                     # Export raw data file
-                    raw_filename = f"{base_filename}_{channel_name}_raw_data.csv"
+                    suffix = "_labeled" if apply_labeling else ""
+                    raw_filename = f"{base_filename}_{channel_name}_raw_data{suffix}.csv"
                     raw_file_path = output_dir / raw_filename
                     raw_data.to_csv(raw_file_path, index=False, encoding='utf-8-sig')
                     exported_files.append(str(raw_file_path))
                     logger.info(f"Exported {channel_name} raw data to {raw_file_path}")
                 
-                # Load capacity log only
-                capacity_data = toyo_loader.load_capacity_log_only(channel_folder)
+                # Export capacity log if exists
                 if not capacity_data.empty:
                     # Add metadata columns
                     if include_battery_info:
@@ -272,7 +296,8 @@ class BatteryDataProcessor:
                     capacity_data['channel'] = channel_name
                     
                     # Export capacity log file
-                    capacity_filename = f"{base_filename}_{channel_name}_capacity_log.csv"
+                    suffix = "_labeled" if apply_labeling else ""
+                    capacity_filename = f"{base_filename}_{channel_name}_capacity_log{suffix}.csv"
                     capacity_file_path = output_dir / capacity_filename
                     capacity_data.to_csv(capacity_file_path, index=False, encoding='utf-8-sig')
                     exported_files.append(str(capacity_file_path))
