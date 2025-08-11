@@ -110,7 +110,9 @@ class BatteryDataProcessor:
         """
         exported_files = []
         
-        # Determine output directory
+        # Determine output directory and initialize base_filename
+        base_filename = None
+        
         if output_path is None:
             output_dir = self.data_path / "processed_data"
         else:
@@ -120,7 +122,6 @@ class BatteryDataProcessor:
                 base_filename = output_path.stem
             else:
                 output_dir = output_path
-                base_filename = None
         
         # Create output directory if it doesn't exist
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -138,10 +139,20 @@ class BatteryDataProcessor:
                 if self.battery_info.get('capacity_mah'):
                     info_parts.append(f"{self.battery_info['capacity_mah']}mAh")
             
-            info_parts.append(self.equipment_type)
+            # Add equipment type if available
+            if self.equipment_type:
+                info_parts.append(self.equipment_type)
+            else:
+                info_parts.append("unknown")
+                
             info_parts.append(timestamp)
             
             base_filename = "_".join(info_parts)
+        
+        # Ensure base_filename is not empty
+        if not base_filename:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            base_filename = f"battery_data_{timestamp}"
         
         if separate_channels and self.channel_data:
             # Export each channel separately

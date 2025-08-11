@@ -3,7 +3,8 @@
     "allow": [
       "Bash(npx:*)",
       "mcp__sequential-thinking__sequentialthinking",
-      "Bash(python test:*)"
+      "Bash(python test:*)",
+      "Bash(python:*)"
     ],
     "deny": []
   }
