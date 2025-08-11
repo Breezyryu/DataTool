@@ -154,55 +154,34 @@ class BatteryDataProcessor:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             base_filename = f"battery_data_{timestamp}"
         
-        if separate_channels and self.channel_data:
-            # Export each channel separately
-            for channel_name, channel_df in self.channel_data.items():
-                if channel_df.empty:
-                    continue
-                
-                filename = f"{base_filename}_{channel_name}.csv"
-                file_path = output_dir / filename
-                
-                # Add metadata columns
-                channel_df_export = channel_df.copy()
-                if include_battery_info:
-                    for key, value in self.battery_info.items():
-                        if value is not None:
-                            channel_df_export[f'battery_{key}'] = value
-                
-                channel_df_export['equipment_type'] = self.equipment_type
-                channel_df_export['channel'] = channel_name
-                
-                # Export to CSV
-                channel_df_export.to_csv(file_path, index=False, encoding='utf-8-sig')
-                exported_files.append(str(file_path))
-                logger.info(f"Exported {channel_name} to {file_path}")
+        # Handle Toyo equipment differently - always separate raw_data and capacity_log
+        if self.equipment_type in ["Toyo", "Toyo1", "Toyo2"]:
+            return self.export_toyo_separate_files(output_dir, base_filename, include_battery_info)
         
-        else:
-            # Export merged data
-            if self.merged_data is None:
-                self.merge_channels()
-            
-            if self.merged_data.empty:
-                logger.warning("No data to export")
-                return exported_files
-            
-            filename = f"{base_filename}_merged.csv"
-            file_path = output_dir / filename
-            
-            # Add metadata columns
-            export_df = self.merged_data.copy()
-            if include_battery_info:
-                for key, value in self.battery_info.items():
-                    if value is not None:
-                        export_df[f'battery_{key}'] = value
-            
-            export_df['equipment_type'] = self.equipment_type
-            
-            # Export to CSV
-            export_df.to_csv(file_path, index=False, encoding='utf-8-sig')
-            exported_files.append(str(file_path))
-            logger.info(f"Exported merged data to {file_path}")
+        # For PNE equipment, always export only merged data (single file)
+        if self.merged_data is None:
+            self.merge_channels()
+        
+        if self.merged_data.empty:
+            logger.warning("No data to export")
+            return exported_files
+        
+        filename = f"{base_filename}_merged.csv"
+        file_path = output_dir / filename
+        
+        # Add metadata columns
+        export_df = self.merged_data.copy()
+        if include_battery_info:
+            for key, value in self.battery_info.items():
+                if value is not None:
+                    export_df[f'battery_{key}'] = value
+        
+        export_df['equipment_type'] = self.equipment_type
+        
+        # Export to CSV
+        export_df.to_csv(file_path, index=False, encoding='utf-8-sig')
+        exported_files.append(str(file_path))
+        logger.info(f"Exported merged data to {file_path}")
         
         # Also export a summary file
         summary_file = output_dir / f"{base_filename}_summary.txt"
@@ -231,6 +210,103 @@ class BatteryDataProcessor:
         
         exported_files.append(str(summary_file))
         logger.info(f"Exported summary to {summary_file}")
+        
+        return exported_files
+    
+    def export_toyo_separate_files(self, output_dir: Path, base_filename: str, 
+                                  include_battery_info: bool = True) -> List[str]:
+        """
+        Export Toyo data as separate files: raw_data.csv and capacity_log.csv for each channel.
+        
+        Args:
+            output_dir: Output directory
+            base_filename: Base filename for output files
+            include_battery_info: Whether to include battery info in files
+            
+        Returns:
+            List of exported file paths
+        """
+        exported_files = []
+        
+        # Get channel folders for Toyo equipment
+        from .utils import get_channel_folders
+        channel_folders = get_channel_folders(self.data_path, self.equipment_type)
+        
+        for channel_folder in channel_folders:
+            channel_name = f"Ch{channel_folder.name}"
+            
+            try:
+                # Create Toyo loader for this specific channel
+                from .data_loaders import ToyoLoader
+                toyo_loader = ToyoLoader(self.data_path)
+                
+                # Load raw data only
+                raw_data = toyo_loader.load_raw_data_only(channel_folder)
+                if not raw_data.empty:
+                    # Add metadata columns
+                    if include_battery_info:
+                        for key, value in self.battery_info.items():
+                            if value is not None:
+                                raw_data[f'battery_{key}'] = value
+                    
+                    raw_data['equipment_type'] = self.equipment_type
+                    raw_data['channel'] = channel_name
+                    
+                    # Export raw data file
+                    raw_filename = f"{base_filename}_{channel_name}_raw_data.csv"
+                    raw_file_path = output_dir / raw_filename
+                    raw_data.to_csv(raw_file_path, index=False, encoding='utf-8-sig')
+                    exported_files.append(str(raw_file_path))
+                    logger.info(f"Exported {channel_name} raw data to {raw_file_path}")
+                
+                # Load capacity log only
+                capacity_data = toyo_loader.load_capacity_log_only(channel_folder)
+                if not capacity_data.empty:
+                    # Add metadata columns
+                    if include_battery_info:
+                        for key, value in self.battery_info.items():
+                            if value is not None:
+                                capacity_data[f'battery_{key}'] = value
+                    
+                    capacity_data['equipment_type'] = self.equipment_type
+                    capacity_data['channel'] = channel_name
+                    
+                    # Export capacity log file
+                    capacity_filename = f"{base_filename}_{channel_name}_capacity_log.csv"
+                    capacity_file_path = output_dir / capacity_filename
+                    capacity_data.to_csv(capacity_file_path, index=False, encoding='utf-8-sig')
+                    exported_files.append(str(capacity_file_path))
+                    logger.info(f"Exported {channel_name} capacity log to {capacity_file_path}")
+                
+            except Exception as e:
+                logger.error(f"Error exporting {channel_name}: {e}")
+                continue
+        
+        # Export summary file
+        summary_file = output_dir / f"{base_filename}_summary.txt"
+        with open(summary_file, 'w', encoding='utf-8') as f:
+            f.write("Battery Test Data Processing Summary (Toyo)\n")
+            f.write("=" * 50 + "\n\n")
+            
+            f.write("Battery Information:\n")
+            for key, value in self.battery_info.items():
+                f.write(f"  {key}: {value}\n")
+            
+            f.write(f"\nEquipment Type: {self.equipment_type}\n")
+            f.write(f"Data Path: {self.data_path}\n")
+            f.write(f"Processing Time: {datetime.now()}\n\n")
+            
+            f.write("Channels Processed:\n")
+            for channel_folder in channel_folders:
+                channel_name = f"Ch{channel_folder.name}"
+                f.write(f"  {channel_name}: raw_data.csv + capacity_log.csv\n")
+            
+            f.write(f"\nExported Files:\n")
+            for file_path in exported_files:
+                f.write(f"  - {file_path}\n")
+        
+        exported_files.append(str(summary_file))
+        logger.info(f"Exported Toyo summary to {summary_file}")
         
         return exported_files
     

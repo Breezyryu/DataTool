@@ -61,18 +61,85 @@ class BaseDataLoader(ABC):
 class PNELoader(BaseDataLoader):
     """Data loader for PNE equipment."""
     
-    # PNE column mapping based on documentation
+    # PNE column mapping based on documentation (46개 컬럼)
     COLUMN_NAMES = [
-        'index', 'default', 'step_type', 'chg_dchg', 'current_app_class',
-        'cccv', 'end_state', 'step_count', 'voltage_uv', 'current_ua',
-        'chg_capacity_uah', 'dchg_capacity_uah', 'chg_power_mw', 'dchg_power_mw',
-        'chg_wh', 'dchg_wh', 'repeat_pattern_count', 'step_time_cs', 'tot_time_day',
-        'tot_time_cs', 'impedance', 'temp1', 'temp2', 'temp3', 'temp4',
-        'unknown25', 'repeat_count', 'total_cycle', 'current_cycle',
-        'avg_voltage_uv', 'avg_current_ua', 'col31', 'col32', 'date',
-        'time', 'col35', 'col36', 'col37', 'col38', 'col39', 'col40',
-        'col41', 'col42', 'col43', 'cumulative_step', 'voltage_max_uv', 'voltage_min_uv'
+        'Index',                    # 0: Index
+        'Default',                  # 1: default(2)
+        'Step_Type',                # 2: Step_type (1:충전, 2:방전, 3:휴지, 4:OCV, 5:Impedance, 8:loop)
+        'ChgDchg',                  # 3: ChgDchg (1:CV, 2:CC, 255:rest)
+        'Current_App_Class',        # 4: Current application classification (1:전류 비인가 직전 포인트, 2:전류인가)
+        'CCCV',                     # 5: CCCV (0:CC, 1:CV)
+        'End_State',                # 6: EndState (0:Pattern 시작, 64:휴지, 65:CC, 66:CV, 69:Pattern종료, 78:용량)
+        'Step_Count',               # 7: Step count (CC/CCCV/Rest/Loop)
+        'Voltage_uV',               # 8: Voltage[uV]
+        'Current_uA',               # 9: Current[uA]
+        'Chg_Capacity_uAh',         # 10: Chg Capacity(uAh) - step 충방전의 경우 합산 필요
+        'Dchg_Capacity_uAh',        # 11: Dchg Capacity(uAh)
+        'Chg_Power_mW',             # 12: Chg Power(mW)
+        'Dchg_Power_mW',            # 13: Dchg Power(mW)
+        'Chg_WattHour_Wh',          # 14: Chg WattHour(Wh)
+        'Dchg_WattHour_Wh',         # 15: Dchg WattHour(Wh)
+        'Repeat_Pattern_Count',     # 16: repeat pattern count (per 8 or 9) 0, 1, 2, ...
+        'Step_Time_cs',             # 17: StepTime(1/100s)
+        'Tot_Time_day',             # 18: TotTime(day)
+        'Tot_Time_cs',              # 19: TotTime(/100s)
+        'Impedance',                # 20: Impedance
+        'Temperature_1',            # 21: Temperature
+        'Temperature_2',            # 22: Temperature
+        'Temperature_3',            # 23: Temperature
+        'Temperature_4',            # 24: Temperature
+        'Unknown_25',               # 25: ?2 or 0
+        'Repeat_Count',             # 26: Repeat count
+        'Total_Cycle',              # 27: TotalCycle
+        'Current_Cycle',            # 28: Current Cycle
+        'Avg_Voltage_uV',           # 29: Average Voltage(uV)
+        'Avg_Current_uA',           # 30: Average Current(uA)
+        'Col_31',                   # 31: -
+        'CV_Section',               # 32: CV 구간
+        'Date_YYYYMMDD',            # 33: Date(YYYY/MM/DD)
+        'Time_HHmmss',              # 34: Time(HH/mm/ssss(/100s))
+        'Col_35',                   # 35: -
+        'Col_36',                   # 36: -
+        'Col_37',                   # 37: -
+        'Step_Info',                # 38: Step별?
+        'CC_Charge',                # 39: CC 충전 ?
+        'CV_Section_2',             # 40: CV 구간
+        'Discharge',                # 41: 방전
+        'Col_42',                   # 42: -
+        'Avg_Voltage_Section',      # 43: 구간별 평균 전압
+        'Cumulative_Step',          # 44: 누적 step
+        'Voltage_Max_uV',           # 45: Voltage max(uV)
+        'Voltage_Min_uV'            # 46: Voltage min(uV)
     ]
+    
+    def apply_column_mapping(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Apply proper column names with intelligent mapping for mismatched column counts.
+        
+        Args:
+            df: DataFrame with numeric column indices
+            
+        Returns:
+            DataFrame with meaningful column names
+        """
+        num_cols = len(df.columns)
+        expected_cols = len(self.COLUMN_NAMES)
+        
+        if num_cols == expected_cols:
+            # Perfect match - use all defined column names
+            df.columns = self.COLUMN_NAMES
+            logger.info(f"Applied {expected_cols} column names (perfect match)")
+        elif num_cols < expected_cols:
+            # Fewer columns than expected - use available column names
+            df.columns = self.COLUMN_NAMES[:num_cols]
+            logger.warning(f"Applied {num_cols} column names (expected {expected_cols})")
+        else:
+            # More columns than expected - use all defined names + extras
+            extra_cols = [f'Extra_Col_{i+1}' for i in range(num_cols - expected_cols)]
+            df.columns = self.COLUMN_NAMES + extra_cols
+            logger.warning(f"Applied {expected_cols} defined + {len(extra_cols)} extra column names")
+        
+        return df
     
     def load_channel_data(self, channel_path: Path) -> pd.DataFrame:
         """
@@ -111,14 +178,8 @@ class PNELoader(BaseDataLoader):
                 # Read without headers, tab-separated
                 df = pd.read_csv(file_path, sep='\t', header=None, encoding='utf-8')
                 
-                # Ensure we have the right number of columns
-                if len(df.columns) == len(self.COLUMN_NAMES):
-                    df.columns = self.COLUMN_NAMES
-                else:
-                    logger.warning(f"Column count mismatch in {file_path.name}: "
-                                 f"expected {len(self.COLUMN_NAMES)}, got {len(df.columns)}")
-                    # Use numeric column names if mismatch
-                    df.columns = [f'col_{i}' for i in range(len(df.columns))]
+                # Apply column mapping intelligently
+                df = self.apply_column_mapping(df)
                 
                 data_frames.append(df)
                 
@@ -172,6 +233,35 @@ class PNELoader(BaseDataLoader):
 class ToyoLoader(BaseDataLoader):
     """Data loader for Toyo equipment (Toyo1 and Toyo2)."""
     
+    def remove_unnamed_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Remove unnamed or empty columns from DataFrame.
+        
+        Args:
+            df: DataFrame with potential unnamed columns
+            
+        Returns:
+            DataFrame with unnamed columns removed
+        """
+        columns_to_keep = []
+        for col in df.columns:
+            col_str = str(col).strip()
+            # Keep columns that are not unnamed, empty, or NaN
+            if not (col_str.startswith('Unnamed') or 
+                   col_str == '' or 
+                   col_str == 'nan' or 
+                   pd.isna(col) or
+                   col_str.lower() == 'none'):
+                columns_to_keep.append(col)
+        
+        filtered_df = df[columns_to_keep]
+        removed_count = len(df.columns) - len(columns_to_keep)
+        
+        if removed_count > 0:
+            logger.info(f"Removed {removed_count} unnamed/empty columns")
+        
+        return filtered_df
+    
     def load_capacity_log(self, channel_path: Path) -> pd.DataFrame:
         """
         Load CAPACITY.LOG file from Toyo channel.
@@ -222,7 +312,7 @@ class ToyoLoader(BaseDataLoader):
         data_frames = []
         logger.info(f"Loading {len(raw_files)} raw data files from {channel_path.name}")
         
-        for file_path in tqdm(raw_files[:10], desc=f"Loading {channel_path.name}"):  # Limit to first 10 for testing
+        for file_path in tqdm(raw_files, desc=f"Loading {channel_path.name}"):
             try:
                 # Read the file - format varies, try to auto-detect
                 # First few lines might contain metadata
@@ -242,6 +332,9 @@ class ToyoLoader(BaseDataLoader):
                 # Clean column names
                 df.columns = [col.strip() for col in df.columns]
                 
+                # Remove unnamed columns
+                df = self.remove_unnamed_columns(df)
+                
                 data_frames.append(df)
                 
             except Exception as e:
@@ -256,6 +349,30 @@ class ToyoLoader(BaseDataLoader):
         logger.info(f"Loaded {len(combined_df)} rows from raw files in {channel_path.name}")
         
         return combined_df
+    
+    def load_raw_data_only(self, channel_path: Path) -> pd.DataFrame:
+        """
+        Load only raw data files (000001, 000002, etc.) from Toyo channel.
+        
+        Args:
+            channel_path: Path to channel directory
+            
+        Returns:
+            DataFrame with combined raw data only
+        """
+        return self.load_raw_data_files(channel_path)
+    
+    def load_capacity_log_only(self, channel_path: Path) -> pd.DataFrame:
+        """
+        Load only CAPACITY.LOG file from Toyo channel.
+        
+        Args:
+            channel_path: Path to channel directory
+            
+        Returns:
+            DataFrame with capacity log data only
+        """
+        return self.load_capacity_log(channel_path)
     
     def load_channel_data(self, channel_path: Path) -> pd.DataFrame:
         """
